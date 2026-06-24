@@ -16,6 +16,7 @@ Run locally:
     open http://localhost:5000
 """
 
+import gc
 import io
 import os
 import re
@@ -180,21 +181,18 @@ def _do_build(excel_file, templates_zip):
                 build_errors.extend(f"{region}: {w}" for w in warnings)
 
                 zout.write(out_path, arcname=f"{region.replace(' ', '_')}_Pools.pptx")
+                # free this region's pptx file (and whatever python-pptx/lxml
+                # objects build_presentation left around) before the next
+                # region loads -- matters on memory-constrained hosting tiers
+                os.remove(out_path)
+                gc.collect()
 
-        if build_errors:
-            needs_review = needs_review + build_errors
+            if build_errors:
+                needs_review = needs_review + build_errors
+            if needs_review:
+                zout.writestr("READ_ME_review_notes.txt", "\n".join(needs_review))
 
         output_buffer.seek(0)
-
-        if needs_review:
-            final_buffer = io.BytesIO()
-            with zipfile.ZipFile(final_buffer, "w", zipfile.ZIP_DEFLATED) as zfinal:
-                with zipfile.ZipFile(output_buffer) as zsrc:
-                    for item in zsrc.namelist():
-                        zfinal.writestr(item, zsrc.read(item))
-                zfinal.writestr("READ_ME_review_notes.txt", "\n".join(needs_review))
-            final_buffer.seek(0)
-            output_buffer = final_buffer
 
         return send_file(
             output_buffer,
@@ -206,5 +204,4 @@ def _do_build(excel_file, templates_zip):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
     app.run(host="0.0.0.0", port=port, debug=True)
