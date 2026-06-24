@@ -107,6 +107,21 @@ def build():
     if not templates_zip or templates_zip.filename == "":
         return render_template_string(PAGE, errors=["No templates zip was uploaded."], needs_review=[])
 
+    try:
+        return _do_build(excel_file, templates_zip)
+    except Exception as exc:
+        app.logger.exception("Unexpected error in /build")
+        return render_template_string(
+            PAGE,
+            errors=[
+                f"Something unexpected went wrong ({type(exc).__name__}: {exc}). "
+                "Check the Render logs for the full traceback, or share this message."
+            ],
+            needs_review=[],
+        )
+
+
+def _do_build(excel_file, templates_zip):
     entries, needs_review, errors = read_registration(excel_file)
     if errors:
         return render_template_string(PAGE, errors=errors, needs_review=needs_review)
@@ -119,7 +134,19 @@ def build():
     by_region = run_by_region(entries)
 
     with tempfile.TemporaryDirectory() as tmp_dir:
-        zin = zipfile.ZipFile(templates_zip)
+        try:
+            zin = zipfile.ZipFile(templates_zip)
+        except zipfile.BadZipFile:
+            return render_template_string(
+                PAGE,
+                errors=[
+                    "The 'Region templates' file isn't a valid .zip file. "
+                    "Make sure you're uploading the zipped folder, not the .pptx itself -- "
+                    "right-click your .pptx file(s) and choose 'Compress'/'Send to "
+                    "Compressed (zipped) folder' first, then upload that .zip file here."
+                ],
+                needs_review=[],
+            )
         template_paths = {}  # normalized region-name-fragment -> extracted path
         for name in zin.namelist():
             if not name.lower().endswith(".pptx"):
@@ -179,4 +206,5 @@ def build():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
     app.run(host="0.0.0.0", port=port, debug=True)
